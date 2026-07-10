@@ -1,10 +1,5 @@
-// The Attention Tollbooth — background service worker
-// Manages timers, scoring, and cross-tab state.
-
 const DEFAULT_MINUTES = 5;
 const DECISION_SECONDS = 10;
-
-// ---------- Storage helpers ----------
 
 async function getState() {
   const { state } = await chrome.storage.local.get('state');
@@ -15,7 +10,7 @@ async function getState() {
     lastActiveDate: null,
     dailyFP: 0,
     dailyDate: null,
-    tabs: {} // tabId -> {url, allocatedMinutes, startTs, expiresAt, expired}
+    tabs: {} 
   };
 }
 
@@ -31,7 +26,6 @@ function todayKey() {
 async function rollDaily(state) {
   const today = todayKey();
   if (state.dailyDate !== today) {
-    // Check streak continuation
     if (state.dailyDate && state.dailyFP >= 50) {
       const prev = new Date(state.dailyDate);
       const now = new Date(today);
@@ -52,7 +46,6 @@ async function rollDaily(state) {
   return state;
 }
 
-// ---------- Badge ----------
 
 async function updateBadge() {
   const state = await getState();
@@ -61,7 +54,6 @@ async function updateBadge() {
   await chrome.action.setBadgeBackgroundColor({ color: '#FF4FA7' });
 }
 
-// ---------- Timers ----------
 
 async function startTimer(tabId, minutes) {
   const state = await getState();
@@ -86,21 +78,16 @@ async function extendTimer(tabId, minutes = 5) {
   t.expiresAt = base + minutes * 60 * 1000;
   t.allocatedMinutes = (t.allocatedMinutes || 0) + minutes;
   if (t.expired) {
-    // Extending after expiration counts as tax
     state.procrastinationTax = (state.procrastinationTax || 0) + 1;
   }
-  // Award small FP for re-committing
   state.dailyFP = (state.dailyFP || 0) + 2;
   state.focusPoints = (state.focusPoints || 0) + 2;
   t.expired = false;
   await setState(state);
   await chrome.alarms.create(`timer_${tabId}`, { when: t.expiresAt });
   await updateBadge();
-  // Tell content script to clear expiration UI
   chrome.tabs.sendMessage(tabId, { type: 'CLEAR_EXPIRATION' }).catch(() => {});
 }
-
-// ---------- Alarm firing ----------
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (!alarm.name.startsWith('timer_')) return;
@@ -115,12 +102,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   chrome.tabs.sendMessage(tabId, { type: 'APPLY_EXPIRATION' }).catch(() => {});
 });
 
-// ---------- Tab lifecycle ----------
 
 chrome.tabs.onCreated.addListener(async (tab) => {
-  // Content script will initialize itself and request a toll.
-  // Nothing to do here — the toll UI is triggered by the content script
-  // once it detects it has no active timer.
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
@@ -130,7 +113,6 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
   if (!t) return;
   const now = Date.now();
   if (!t.expired && now < t.expiresAt) {
-    // Closed early — award points
     let fp = 10;
     const elapsed = now - t.startTs;
     const total = t.expiresAt - t.startTs;
@@ -143,8 +125,6 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
   await setState(state);
   await updateBadge();
 });
-
-// ---------- Message router ----------
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
